@@ -1,0 +1,98 @@
+#!/usr/bin/python
+"""
+Script to bulk run R analysis on imported CSV files
+"""
+
+import glob
+import shutil
+from gps_reader_pkg.config import Config
+from gps_reader_pkg.folder_methods import create_folder
+from gps_reader_pkg.get_terrain_details import get_terrain_details
+
+import json
+
+import click
+from pathlib import Path
+import os
+from concurrent import futures
+
+
+@click.command()
+@click.option('--config', '-c', help='config.yaml file location', required=True)
+@click.option('--listfile', '-l', help='name of listfile to process', required=False)
+@click.option('--corecount', '-cc', help='location of file list to process', required=False)
+
+
+def main(config, listfile = None, corecount = None):
+    """
+    Read filetype from config file & import GPS tracks from relevant source
+    find tracks in scope - moves out-of scope to separate folder
+    Saves tracks as gpkg files in specified output folder
+    :param config:
+    """
+    config = Config(config)
+    variables=config.read_all()
+
+    CSV_filepath = variables['csv_folder']
+    if CSV_filepath is None:
+        if listfile is None:
+            print('CSV folder or file list not given')
+            return False
+    elif not (Path(CSV_filepath).exists()):
+        print('CSV folder not found')
+        return False
+
+    listfile_folder = variables['listfile_folder']
+    if listfile_folder is None:
+        if listfile is not None:
+            print('listfile folder not given')
+            return False
+    elif not (Path(listfile_folder).exists()):
+        print('listfile folder not found')
+        return False
+
+    terrain_path = variables['terrain_folder']
+    if terrain_path is None:
+        print('Terrain folder required to check scope')
+        return False
+    if not (Path(terrain_path).exists()):
+        print('Terrain folder not found')
+        return False
+
+    if corecount is None:
+        numThreads = os.cpu_count()
+    else:
+        numThreads = int(corecount)
+    #print(numThreads)
+    pool = futures.ThreadPoolExecutor(numThreads)
+    results = []
+
+    if listfile is None:
+        files = glob.glob(CSV_filepath + '/*.csv', recursive=True)
+    else:
+        filetype = variables['filetype']
+        if filetype != 'osm' and filetype != 'hikr':
+            print('Filetype must be OSM or Hikr')
+            return False
+        listfile = listfile_folder + '/' + filetype + '/' + listfile
+        with open(listfile, 'r') as filehandle:
+            files = json.load(filehandle)
+
+    for file in files:
+        results.append(pool.submit(_import_track, file, terrain_path))
+        #result = _import_track(file, terrain_path)
+        #print(result)
+
+    for future in futures.as_completed(results):
+        print(future.result())
+
+def _import_track(file, terrain_folder):
+
+    valid = False
+    outfiles = get_terrain_details(file, terrain_folder, road_radius=50)
+    if outfiles:
+        valid = True
+    return file, valid
+
+if __name__ == "__main__":
+    main()

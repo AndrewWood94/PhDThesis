@@ -1,0 +1,54 @@
+#!/usr/bin/python
+"""
+Script to scrape website for gps files & save path to json file
+"""
+import os
+from scrapy.crawler import CrawlerProcess
+from gps_reader_pkg.scraper_module import GPXSpider
+from gps_reader_pkg.config import Config
+import click
+from pathlib import Path
+from gps_reader_pkg.folder_methods import create_folder
+
+
+@click.command()
+@click.option('--config', '-c', help='config.yaml file location', required=True)
+def main(config):
+    """
+    Read website from config file & find all instances of gpx files containing timestamps
+    Saves output to filename & path specified in config file
+    :param config:
+    :return: filepaths json - list of paths to gpx tracks
+    """
+    config = Config(config)
+    filename = config['data']['GPS_files']['hikr']['name']
+    if filename is None:
+        print('json output name not given, defaulting to "filepaths"')
+        filename = 'filepaths'
+    json_path = config['data']['GPS_files']['hikr']['folder']
+    if json_path is None:
+        print('json output path not specified')
+        return False
+    else:
+        create_folder(Path(json_path))
+
+    path = config['data']['GPS_files']['hikr']['folder'] + '/' + filename + '.json'
+    website = config['data']['GPS_files']['hikr']['website']
+    if website is None:
+        print('Site to scrape not given')
+        return False
+
+    process = CrawlerProcess(settings={
+        "FEEDS": {
+            path: {"format": "json"},
+        },
+    })
+
+    if os.path.exists(path):
+        os.remove(path)
+    process.crawl(GPXSpider, input='inputargument', start_urls=[website])
+    process.start()
+
+
+if __name__ == "__main__":
+    main()

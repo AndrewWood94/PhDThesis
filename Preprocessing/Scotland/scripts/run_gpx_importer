@@ -1,0 +1,154 @@
+#!/usr/bin/python
+"""
+Script to import gps tracks from folder or json file list
+"""
+import json
+import requests
+from gps_reader_pkg.file_reader import GpxFileReader
+import glob
+import shutil
+from gps_reader_pkg.config import Config
+from gps_reader_pkg.qgis_app_init import QgisSetup
+from gps_reader_pkg.folder_methods import create_folder
+
+
+import click
+from pathlib import Path
+
+
+@click.command()
+@click.option('--config', '-c', help='config.yaml file location', required=True)
+def main(config):
+    """
+    Read filetype from config file & import GPS tracks from relevant source
+    If data filter is included for OSM data, initial check is run to find tracks in scope -
+        these gpx files are saved to in_scope_folder for easier future use
+    Saves tracks as gpkg files in specified output folder
+    :param config:
+    :return: in_scope_folder - contains all OSM gpx tracks in scope
+            gpkg_folder - contains gpkg file for each track segment
+    """
+    config = Config(config)
+
+    #Initialise QGIS instance from path in config file
+    qgs = QgisSetup()
+    if not qgs:
+        return False
+
+    scope_path = config['data']['os_grid_folder']
+    if scope_path is None:
+        print('OS grid folder not given')
+        return False
+    if not (Path(scope_path).exists()):
+        print('OS grid folder not found')
+        return False
+    elif not (Path(scope_path + '/10km_grid_region.shp').exists()):
+        print('10km_grid_region.shp not found')
+        return False
+    elif not (Path(scope_path + '/100km_grid_region.shp').exists()):
+        print('100km_grid_region.shp not found')
+        return False
+
+    filetype = config['filetype'].lower()
+    if filetype != 'osm' and filetype != 'hikr':
+        print('Filetype must be OSM or Hikr')
+        return False
+
+    output = config['output']['gpkg_folder']
+    if output is None:
+        print('gpkg output folder not given')
+        return False
+    else:
+        create_folder(Path(output))
+
+    out_names = config['output']['name_root']
+    if out_names is None:
+        print('No output filename given, defaulting to Data')
+        out_names = 'Data'
+
+    reader = GpxFileReader(output,
+                           name=out_names,
+                           overwrite=True,
+                           scope_path=scope_path)
+
+    if filetype == 'osm':
+        osm_scopecheck_required = config['conditions']['data_filter']
+        if osm_scopecheck_required is None:
+            print('Data scope filter not specified, defaulting to True')
+            osm_scopecheck_required = True
+
+        #Run initial check to look at track scope
+        if osm_scopecheck_required:
+            osm_data_filepath = config['data']['GPS_files']['osm']['folder']
+            osm_inscope_filepath = config['conditions']['in_scope_folder']
+            if osm_data_filepath is None:
+                print('OSM GPX folder not given')
+                return False
+            if not (Path(osm_data_filepath).exists()):
+                print('OSM GPX folder not found')
+                return False
+            if osm_inscope_filepath is None:
+                print('No folder given to save in-scope files')
+                return False
+            else:
+                create_folder(Path(osm_inscope_filepath))
+
+            files = glob.glob(osm_data_filepath + '/**/*.gpx', recursive=True)
+            for file in files:
+
+                layer = reader.import_gpx_file(file,
+                                               attribute_select="Both",
+                                               check_scope=True,
+                                               min_duration=10000,
+                                               min_distance=10000,
+                                               write_file=False)
+
+                if layer != 'out of scope':
+                    shutil.copy2(file, osm_inscope_filepath)
+            reader.call_count = -1
+
+        else:
+            osm_inscope_filepath = config['data']['GPS_files']['osm']['folder']
+            if osm_inscope_filepath is None:
+                print('OSM GPX folder not given')
+                return False
+            if not (Path(osm_inscope_filepath).exists()):
+                print('OSM GPX folder not found')
+                return False
+
+        files = glob.glob(osm_inscope_filepath + '/*.gpx', recursive=False)
+
+        for file in files:
+            reader.import_gpx_file(file,
+                                   attribute_select="Both",
+                                   calculate_motion_attributes=True,
+                                   check_scope=True)
+
+    else:
+        hikr_track_json = config['data']['GPS_files']['hikr']['folder'] + '/' + config['data']['GPS_files']['hikr'][
+            'name'] + '.json'
+        if hikr_track_json is None:
+            print('Hikr .json not given')
+            return False
+
+        if not (Path(hikr_track_json).exists()):
+            print('Hikr .json file not found')
+            return False
+
+        with open(hikr_track_json) as json_file:
+            data = json.load(json_file)
+            for path in data:
+                file_path = path['filepath']
+                file = requests.get(file_path).text
+
+                reader.import_gpx_file(file,
+                                       attribute_select="Both",
+                                       calculate_motion_attributes=True,
+                                       check_scope=True,
+                                       file_as_string=True)
+
+    qgs.exit()
+
+
+if __name__ == "__main__":
+    main()

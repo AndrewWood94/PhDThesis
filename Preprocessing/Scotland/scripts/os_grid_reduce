@@ -1,0 +1,79 @@
+#!/usr/bin/python
+
+"""
+Reduces OS national grid 10km & 100km resolution files to relevant Scotland area only
+"""
+
+from qgis.core import (QgsVectorLayer, edit)
+from gps_reader_pkg.config import Config
+from gps_reader_pkg.qgis_app_init import QgisSetup
+
+import click
+from pathlib import Path
+
+
+@click.command()
+@click.option('--config', '-c', help='config.yaml file location', required=True)
+def main(config):
+    """
+    Reads os_grid_folder from config file, and reduces 10km grid region & 100km grid region files down to
+    Scotland area only
+    :param config:
+    :return: reduced 10km_grid_region.shp & 100km_grid_region.shp files
+    """
+
+    config = Config(config)
+
+    qgs = QgisSetup()
+    if not qgs:
+        return False
+
+    filepath = config['data']['os_grid_folder']
+    if filepath is None:
+        print('OS grid folder not given')
+        return False
+
+    gridpath10 = filepath + '/10km_grid_region.shp'
+    gridpath100 = filepath + '/100km_grid_region.shp'
+
+    if not (Path(filepath).exists()):
+        print('OS grid folder  not found')
+        return False
+    elif not (Path(gridpath10).exists()):
+        print('10km_grid_region.shp not found')
+        return False
+    elif not (Path(gridpath100).exists()):
+        print('100km_grid_region.shp not found')
+        return False
+
+    grid10 = QgsVectorLayer(gridpath10, 'grid10', 'ogr')
+    grid100 = QgsVectorLayer(gridpath100, 'grid100', 'ogr')
+
+    outer_list = ['HX', 'NU', 'NZ']
+    with edit(grid100):
+        for feature in grid100.getFeatures():
+            if feature['GRIDSQ'][0] == 'S' or feature['GRIDSQ'][0] == 'T':
+                grid100.deleteFeature(feature.id())
+            elif feature['GRIDSQ'] in outer_list:
+                grid100.deleteFeature(feature.id())
+
+    #list of files to keep within NY national grid square
+    inner_list = ['06', '07', '08', '09', '16', '17', '18', '19', '26', '27', '28', '29', '36', '37', '38', '39', '47',
+                  '48', '49', '58', '59', '69']
+    with edit(grid10):
+        for feature in grid10.getFeatures():
+            if feature['TILE_NAME'][0] == 'S' or \
+                    feature['TILE_NAME'][0] == 'T' or \
+                    feature['TILE_NAME'][0] == 'O':
+                grid10.deleteFeature(feature.id())
+            elif feature['TILE_NAME'][0:2] in outer_list:
+                grid10.deleteFeature(feature.id())
+            elif feature['TILE_NAME'][0:2] == 'NY':
+                if feature['TILE_NAME'][2:4] not in inner_list:
+                    grid10.deleteFeature(feature.id())
+
+    qgs.exit()
+
+
+if __name__ == "__main__":
+    main()

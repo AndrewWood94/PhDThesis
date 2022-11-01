@@ -1,0 +1,47 @@
+#filetype should be either Hikr or OSM
+filetype: hikr
+data:
+  #folder containing 10km_grid_region.shp & 100km_grid_region.shp
+  os_grid_folder: data/os-grids
+  GPS_files:
+    hikr:
+      #site for web scraper to find gps tracks
+      website: https://www.hikr.org/region518/ped/?gps=1
+      #location of json file containing hikr data links
+      folder: data
+      name: hikr_filepaths
+    osm:
+      #folder containing OpenStreetMap tracks to be read
+      folder: data/scotland-osm-tracks
+  terrain:
+    #path to folder containing DTM files, split by national grid squares e.g DTM_folder/ht/HT93NE.asc
+    DTM_folder: /path/to/terrain/DTM/folder/
+    DTM_resolution: 5
+  #If type = OSM, give location of fully processed hikr data .csv to use in PrepareData script
+  processed_hikr_filepath: /path/to/processed/hikr.csv
+conditions:
+  #run initial filter on OSM data to remove files which are not in region (not required but speeds up processing)
+  #should be set to False if already filtered dataset
+  data_filter: True
+  #location to copy in-scope .gpx files
+  in_scope_folder:
+output:
+  #Location to save gpkg output files
+  gpkg_folder:
+  #Name stem for gpkg files, indexes are automatically added for each new track & segment, e.g Data0_001
+  name_root:
+  #location to save merged .gpkg and .csv files
+  merged_folder:
+  #file name to save merged .gpkg and .csv files
+  merged_name:
+  #destination folder for fully processed output files
+  processed_folder:
+  optional:
+    #Save dataset with only valid breaks (>30 seconds) tagged
+    valid_breaks_filename:
+    #Save dataset with data combined into 50m segments
+    combined_50_filename:
+    #Save processed & filtered dataset with breaks tagged
+    processed_breaks_filename:
+  #Save processed & filtered dataset with breaks/non-walking sections removed
+  processed_filename:

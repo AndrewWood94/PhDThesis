@@ -1,0 +1,81 @@
+#!/usr/bin/python
+
+"""
+Script to merge gpkg files into single file & convert to csv.
+"""
+
+from qgis.core import (QgsCoordinateReferenceSystem, QgsVectorLayer)
+import os
+from pathlib import Path
+from gps_reader_pkg.convert_csv import Convert
+from gps_reader_pkg.config import Config
+from gps_reader_pkg.qgis_app_init import QgisSetup
+from gps_reader_pkg.folder_methods import create_folder, cleanup
+import click
+
+
+@click.command()
+@click.option('--config', '-c', help='config.yaml file location', required=True)
+def main(config):
+    """
+
+    Reads gpkg_folder from config file and merges all gpkg files into single file in both gpkg & csv format
+    Both output files are saved to merged_folder in config file
+
+    :param config:
+    :return: merged gpkg & csv files
+    """
+    config = Config(config)
+
+    # Initialise QGIS instance from path in config file
+    qgs = QgisSetup()
+    if not qgs:
+        return False
+
+    gps_track_folder = config['output']['gpkg_folder']
+    if gps_track_folder is None:
+        print('gpkg folder not given')
+        return False
+    if not (Path(gps_track_folder).exists()):
+        print('gpkg folder not found')
+        return False
+    output_folder = config['output']['merged_folder']
+    if output_folder is None:
+        print('gpkg output folder not given')
+        return False
+    else:
+        create_folder(Path(output_folder))
+    output_name = config['output']['merged_name']
+    if output_name is None:
+        print('No output filename given, defaulting to Merged')
+        output_name = 'Merged'
+
+    output_path = output_folder + '/' + output_name
+
+    from qgis import processing
+    from processing.core.Processing import Processing
+
+    Processing.initialize()
+
+    layerlist = []
+    for filename in os.listdir(gps_track_folder):
+        if filename.endswith('.gpkg'):
+            layerlist.append(gps_track_folder + '/' + filename + '|layername=' + Path(filename).stem)
+
+    parameter_dictionary = {'CRS': QgsCoordinateReferenceSystem('EPSG:4326'),
+                            'LAYERS': layerlist,
+                            'OUTPUT': output_path + '.gpkg'}
+
+    processing.run("qgis:mergevectorlayers", parameter_dictionary)
+
+    vector_layer = QgsVectorLayer(output_path + '.gpkg')
+    Convert(vector_layer, output_path + '.csv')
+
+    qgs.exit()
+
+    # file cleanup
+    cleanup(output_path)
+    cleanup(gps_track_folder)
+
+if __name__ == "__main__":
+    main()

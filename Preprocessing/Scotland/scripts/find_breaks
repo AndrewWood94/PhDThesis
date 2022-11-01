@@ -1,0 +1,71 @@
+#!/usr/bin/python
+"""
+Script to run breakfinding method on gpkg file folder
+"""
+from gps_reader_pkg.break_finder import BreakFinder
+from gps_reader_pkg.config import Config
+from gps_reader_pkg.qgis_app_init import QgisSetup
+from gps_reader_pkg.folder_methods import cleanup
+
+import os
+import sqlite3
+from concurrent import futures
+import click
+from pathlib import Path
+
+
+@click.command()
+@click.option('--config', '-c', help='config.yaml file location', required=True)
+def main(config):
+    """
+    Reads gpkg_folder from config file and loops through the folder,
+    running BreakFinder.find_breaks method on each file
+
+    :param config:
+    :return: updated gpkg files with OnBreak column
+    """
+    config = Config(config)
+
+    #Initialise QGIS instance from path in config file
+    qgs = QgisSetup()
+    if not qgs:
+        return False
+
+    gps_track_folder = config['output']['gpkg_folder']
+    if gps_track_folder is None:
+        print('gpkg folder not given')
+        return False
+    if not (Path(gps_track_folder).exists()):
+        print('gpkg folder not found')
+        return False
+
+    #Use multithreading to process files concurrently
+    numThreads = os.cpu_count()
+    pool = futures.ThreadPoolExecutor(numThreads)
+    results = []
+    for filename in os.listdir(gps_track_folder):
+        if filename.endswith('.gpkg'):
+            results.append(pool.submit(_find_break, gps_track_folder, filename))
+
+    for future in futures.as_completed(results):
+        print(future.result())
+        completed_file = gps_track_folder + '/' + future.result()[0]
+
+        #Prevent file sizes increasing every time file is updated
+        conn = sqlite3.connect(completed_file)
+        conn.cursor().execute("VACUUM;")
+        conn.close()
+        if not future.result()[1]:
+            os.remove(completed_file)
+    qgs.exit()
+
+    cleanup(gps_track_folder)
+
+
+def _find_break(folder, filename):
+    valid = BreakFinder().find_breaks(folder + '/' + filename)
+    return filename, valid
+
+
+if __name__ == "__main__":
+    main()

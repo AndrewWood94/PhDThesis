@@ -1,0 +1,57 @@
+#!/usr/bin/python
+"""
+Script to import gps tracks from folder or json file list
+"""
+
+import glob
+from gps_reader_pkg.config import Config
+from gps_reader_pkg.folder_methods import create_folder
+
+import click
+from pathlib import Path
+import json
+import random
+
+@click.command()
+@click.option('--config', '-c', help='config.yaml file location', required=True)
+@click.option('--tracks_per_file', '-t', help='number of tracks to write to each listfile', required=True)
+def main(config, tracks_per_file):
+    """
+    Read filetype from config file & import GPS tracks from relevant source
+    find tracks in scope - moves out-of scope to separate folder
+    Saves tracks as gpkg files in specified output folder
+    :param config:
+    """
+    config = Config(config)
+    variables=config.read_all()
+
+    filetype = variables['filetype']
+    if filetype != 'osm' and filetype != 'hikr':
+        print('Filetype must be OSM or Hikr')
+        return False
+
+    data_filepath = variables['csv_folder']
+    if data_filepath is None:
+        print('CSV folder not given')
+        return False
+    if not (Path(data_filepath).exists()):
+        print('CSV folder not found')
+        return False
+
+    filelists = variables['listfile_folder']
+    if filelists is None:
+        print('No folder given to store list files')
+        return False
+    else:
+        create_folder(Path(filelists))
+        create_folder(Path(filelists+'/'+filetype))
+
+    files = glob.glob(data_filepath + '/*.csv', recursive=True)
+    random.shuffle(files)
+    tracks_per_file = int(tracks_per_file)
+    for i in range(0,len(files),tracks_per_file):
+        with open(filelists+'/'+filetype+'/listfile_'+str(int(i/tracks_per_file))+'.txt', 'w') as filehandle:
+            json.dump(files[i:i+tracks_per_file], filehandle)
+
+if __name__ == "__main__":
+    main()

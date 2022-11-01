@@ -1,0 +1,190 @@
+This repo provides the methods required to recreate the dataset of walking and hiking tracks in the walking speeds paper.
+
+- [Preparation](#preparation)
+    - [OS Terrain 5 DTM](#os-terrain-5-dtm)
+    - [Conda Environment](#conda-environment)
+    - [Config file](#config-file)
+- [Replication](#replication)
+    - [GPS tracks](#gps-tracks)
+    - [Importing files](#importing-files)
+    - [Merging files](#merging-files)
+    
+For replication of the methods used in the paper, the full guide should be followed, 
+however to simply recreate the dataset of filtered walking tracks you should follow the guide to recreate the Hikr data, 
+then jump straight to the [Terrain Calculation](#terrain-calculation) using the unzipped OSM.csv files in the data folder as inputs,
+after completing the [Preparation](#preparation). (Hikr data cannot be provided directly due to copyright).
+ 
+Note: If replicating the methods in full, be aware that the ```find_breaks``` script takes a very long time to run. 
+(~1 week on 2018 MacBook Air, 1.6 GHz Dual-Core Intel Core i5, 8 GB 2133 MHz LPDDR3)
+
+
+## Preparation
+
+### OS Terrain 5 DTM
+
+Due to licensing requirements, the Digital Terrain Map containing elevation data required for calculating both walking and hill slope angles 
+is not available for public download and must be accessed separately. It is available under an Educational License from Digimap and can be 
+accessed using the [Bulk Download Request form](https://goo.gl/FxyyFs),
+with the following criteria:
+
+Data Collection : Digimap: Ordnance Survey  
+Dataset : OS Terrain 5 DTM  
+Area : UK coverage  
+Format : ASC
+
+### Conda Environment
+
+Create a conda environment and install python, QGIS, R, click and pandas.
+If QGIS or R are already present on the system these can be left out
+
+```Bash
+conda create -n [environment_name] python=3.8
+conda activate [environment_name]
+conda install -c conda-forge qgis=3.18.2
+conda install -c conda-forge r=4.0
+conda install -c conda-forge click=7.1.2
+conda install -c conda-forge pandas=1.2.4
+conda install -c conda-forge rpy2=3.4.5
+```
+
+If recreating data from scratch, scrapy is also required:
+```Bash
+conda install -c conda-forge scrapy=2.4.1
+```
+
+Navigate to the downloaded repository and install this package locally:
+
+```Bash
+cd /where/the/package/lives/WalkingSpeedsPaper
+pip install .
+
+#alternatively: pip install /where/the/package/lives/WalkingSpeedsPaper
+```
+
+### Config file
+
+The file config.yaml contained within this repository is used as the configuration file
+for reading and importing the data, and should be edited to point to the correct file locations.
+Descriptions of each variable, and the scripts in which they are used are shown below. 
+
+- **filetype** :  
+should be set to either *osm* or *hikr* depending on which data type is being read  
+```all_in_one```
+- **data**
+  - **os_grid_folder** :  
+  Path to folder containing OS National grid files (data/os-grids)
+    ```
+    .
+    ├── os-grids
+        └── 10km_grid_region.shp
+        └── 100km_grid_region.shp
+         ⋮
+    ```
+    ```all_in_one```
+  - **GPS_files**
+    - **hikr**
+      - **website** :  
+      Address of Hikr results to parse for GPS data  
+      ```scrape```  
+      - **folder** : 
+      Location to save and read hikr GPS data files  
+      ```scrape```
+      ```all_in_one``` 
+    - **osm**
+      - **folder** :  
+      Path to location of OpenStreetMap tracks to be read  
+      ```all_in_one``` 
+  - **terrain**
+    - **DTM_folder** :  
+    Path to top level folder containing DTM files e.g  
+        ```
+        .
+        ├── DTM_folder
+            └── hp
+                └── HP40NE.asc
+                └── HP40NE.prj
+                └── HP40NE.gml
+                └── Metadata_HP40NE.xml
+                 ⋮
+            └── ht
+             ⋮
+        ```
+        ```all_in_one```
+    - **DTM_resolution** :  
+    Resolution of DTM data (should be set to 5)  
+    ```all_in_one```  
+  - **processed_hikr_filepath** :  
+  If ```type``` = osm, give filepath of processed hikr data to use for filtering tracks   
+  ```all_in_one.R```
+- **output**
+  - **completed_gpx_folder** :  
+  Location to move completed GPX files to help with partial running  
+  ```all_in_one```
+  - **out_of_scope_folder** :  
+  Location to move unused GPX files   
+  ```all_in_one```
+  - **import_folder** :  
+  Location to save  ouput csv files  
+  ```all_in_one```
+  ```merge_tracks```
+  - **valid_breaks_folder** :  
+  Filename for dataset with only valid breaks (>30 seconds) tagged  
+  ```all_in_one```
+  - **combined_50_folder** :  
+  Filename for dataset with data combined into 50m segments   
+  ```all_in_one```
+  - **processed_breaks_folder** :  
+  Filename for processed & filtered dataset with breaks tagged  
+  ```all_in_one```
+  - **processed_folder** :  
+  Destination folder for processed output files  
+  ```all_in_one```
+   - **merged_folder** :  
+  Location to save merged .csv file  
+  ```merge_tracks```
+  - **merged_filename** :  
+  File name to save merged .csv file  
+  ```merge_tracks```
+
+## Replication
+
+This should be completed first with [filetype] = "hikr", as the Hikr data is used to filter OSM data
+
+### GPS tracks:
+
+The list of Hikr tracks used can be be reproduced by running the ```scrape``` script with 
+[website] = https://www.hikr.org/region516/ped/?gps=1 in the config file. The GPX tracks will be saved in  
+config['data']['GPS_files']['Hikr']['folder']
+
+```Bash
+scrape -c config.yaml
+
+#windows: python scripts/scrape -c config.yaml
+```
+
+The OpenStreetMap (OSM) tracks are available [here](http://zverik.openstreetmap.ru/gps/files/extracts/europe/great_britain.tar.xz),
+
+### Importing Files:
+
+The code to import the files is a modified version of the [gpx_segment_importer
+QGIS plugin.](https://github.com/SGroe/gpx-segment-importer)  
+The ```all_in_one``` script will read the folder, and import gpx files as csv files.
+These files are saved to the config [output][import_folder].
+This will also save all of the invalid gpx files to [out_of_scope_folder], for faster processing in future.
+
+```Bash
+all_in_one -c config.yaml
+
+#windows: python scripts/all_in_one -c config.yaml
+```
+
+### Merging files:
+
+The ```merge``` script takes all of the files in [output][processed_folder] 
+and combines them into a single file, [output][merged_filename], saved in [output][merged_folder].  
+
+```Bash
+merge_tracks -c config.yaml
+
+#windows: python scripts/merge_tracks -c config.yaml
+```

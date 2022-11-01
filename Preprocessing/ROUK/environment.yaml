@@ -1,0 +1,14 @@
+name: GPX_Eddie
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.8
+  - qgis=3.18.2
+  - click=7.1.2
+  - rpy2=3.4.5
+  - pandas=1.3.0
+  - backports=1.0
+  - backports.zoneinfo=0.2.1
+  - geopandas=0.10.0
+  - scrapy=2.4.1

@@ -1,0 +1,56 @@
+#!/usr/bin/python
+"""
+Script to scrape website for gps files & save path to json file
+"""
+import os
+from scrapy.crawler import CrawlerProcess
+from gps_reader_pkg.scraper_module import GPXSpider
+from gps_reader_pkg.config import Config
+import click
+from pathlib import Path
+from gps_reader_pkg.folder_methods import create_folder
+from gps_reader_pkg.download_hikr import getHikr
+
+
+@click.command()
+@click.option('--config', '-c', help='config.yaml file location', required=True)
+def main(config):
+    """
+    Read website from config file & find all instances of gpx files containing timestamps
+    Saves output to filename & path specified in config file
+    :param config:
+    :return: filepaths json - list of paths to gpx tracks
+    """
+    config = Config(config)
+    variables=config.read_all()
+
+    destination_folder = variables['gps_folder']
+    if destination_folder is None:
+        print('Hikr data destination path not specified')
+        return False
+    else:
+        create_folder(Path(destination_folder))
+    json_name = 'filepaths.json'
+
+    json_path = destination_folder + '/' + json_name
+    website = variables['hikr_website']
+    if website is None:
+        print('Site to scrape not given')
+        return False
+
+    process = CrawlerProcess(settings={
+        "FEEDS": {
+            json_path: {"format": "json"},
+        },
+    })
+
+    if os.path.exists(json_path):
+        os.remove(json_path)
+    process.crawl(GPXSpider, input='inputargument', start_urls=[website])
+    process.start()
+
+    getHikr(destination_folder, json_path)
+    os.remove(json_path)
+
+if __name__ == "__main__":
+    main()

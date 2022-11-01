@@ -1,0 +1,155 @@
+#!/usr/bin/python
+"""
+Script to bulk run R analysis on imported CSV files
+"""
+
+import glob
+import shutil
+from gps_reader_pkg.config import Config
+from gps_reader_pkg.folder_methods import create_folder
+import json
+
+import click
+from pathlib import Path
+import os
+from concurrent import futures
+
+import rpy2.robjects as robjects
+from rpy2.robjects import pandas2ri
+
+
+@click.command()
+@click.option('--config', '-c', help='config.yaml file location', required=True)
+@click.option('--listfile', '-l', help='name of listfile to process', required=False)
+@click.option('--corecount', '-cc', help='location of file list to process', required=False)
+
+
+def main(config, listfile = None, corecount = None):
+    """
+    Read filetype from config file & import GPS tracks from relevant source
+    find tracks in scope - moves out-of scope to separate folder
+    Saves tracks as gpkg files in specified output folder
+    :param config:
+    """
+    config = Config(config)
+    variables=config.read_all()
+
+    r = robjects.r
+    r_filepath = variables['r_script']
+    if r_filepath is None:
+        print('R script path not given')
+        return False
+    if not (Path(r_filepath).exists()):
+        print('R file not found')
+        return False
+    r['source'](r_filepath)
+    # Loading the function we have defined in R.
+    prepare_function_r = robjects.globalenv['prepare']
+    parameters = dict()
+
+    filetype = variables['filetype']
+    if filetype != 'osm' and filetype != 'hikr':
+        print('Filetype must be OSM or Hikr')
+        return False
+
+    parameters['filetype'] = filetype
+
+    CSV_filepath = variables['csv_folder']
+    if CSV_filepath is None:
+        if listfile is None:
+            print('CSV folder or file list not given')
+            return False
+    elif not (Path(CSV_filepath).exists()):
+        print('CSV folder not found')
+        return False
+
+    listfile_folder = variables['listfile_folder']
+    if listfile_folder is None:
+        if listfile is not None:
+            print('listfile folder not given')
+            return False
+    elif not (Path(listfile_folder).exists()):
+        print('listfile folder not found')
+        return False
+
+    if filetype == 'osm':
+        parameters['hikr_path'] = variables['processed_hikr']
+        if parameters['hikr_path'] is None:
+            print('Hikr file must be given to run OSM data')
+            return False
+        if not (Path(parameters['hikr_path']).exists()):
+            print('Hikr file must be given to run OSM data')
+            return False
+    else:
+        parameters['hikr_path'] = ""
+
+    parameters['valid_breaks'] = variables['valid_breaks']
+    if parameters['valid_breaks'] is not None:
+        create_folder(Path(parameters['valid_breaks']))
+    else:
+        parameters['valid_breaks'] = ""
+
+    parameters['combo_50'] = variables['combo_50']
+    if parameters['combo_50'] is not None:
+        create_folder(Path(parameters['combo_50']))
+    else:
+        parameters['combo_50'] = ""
+
+    parameters['processed_breaks'] = variables['processed_breaks']
+    if parameters['processed_breaks'] is not None:
+        create_folder(Path(parameters['processed_breaks']))
+    else:
+        parameters['processed_breaks'] = ""
+
+    parameters['processed_output'] = variables['processed']
+    if parameters['processed_output'] is None:
+        print('R output folder not given')
+        return False
+    else:
+        create_folder(Path(parameters['processed_output']))
+
+    parameters['short_segments_output'] = variables['short_segments']
+    if parameters['short_segments_output'] is not None:
+        create_folder(Path(parameters['short_segments_output']))
+    else:
+        parameters['short_segments_output'] = ""
+
+    r_parameters = robjects.DataFrame(parameters)
+
+    if corecount is None:
+        numThreads = os.cpu_count()
+    else:
+        numThreads = int(corecount)
+    #print(numThreads)
+    pool = futures.ThreadPoolExecutor(numThreads)
+    results = []
+
+    if listfile is None:
+        files = glob.glob(CSV_filepath + '/*.csv', recursive=True)
+    else:
+        listfile = listfile_folder + '/' + filetype + '/' + listfile
+        with open(listfile, 'r') as filehandle:
+            files = json.load(filehandle)
+
+    for file in files:
+        results.append(pool.submit(_import_track, file, prepare_function_r, r_parameters))
+        #result = _import_track(file, prepare_function_r, r_parameters)
+        #print(result)
+
+    for future in futures.as_completed(results):
+        print(future.result())
+
+    #print('All done')
+
+
+def _import_track(file, prepare_r, r_parameters):
+
+    try:
+       outfiles = pandas2ri.rpy2py(prepare_r(file, r_parameters))[0]
+    except:
+       outfiles=None
+
+    return file, outfiles
+
+if __name__ == "__main__":
+    main()

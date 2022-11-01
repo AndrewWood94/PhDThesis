@@ -1,0 +1,113 @@
+#!/usr/bin/python
+"""
+Script to import gps tracks from folder or json file list
+"""
+
+from gps_reader_pkg.break_finder import BreakFinder
+
+import glob
+from gps_reader_pkg.config import Config
+from qgis.core import QgsVectorLayer
+from gps_reader_pkg.qgis_app_init import QgisSetup
+from gps_reader_pkg.vector_file_writer import VectorFileWriter
+import json
+import shutil
+
+
+import click
+from pathlib import Path
+import os
+from concurrent import futures
+
+
+@click.command()
+@click.option('--config', '-c', help='config.yaml file location', required=True)
+@click.option('--listfile', '-l', help='location of file list to process', required=False)
+@click.option('--corecount', '-cc', help='location of file list to process', required=False)
+def main(config, listfile=None, corecount=None):
+    """
+    Import GPS tracks from either list of filepaths (listfile), or GPS_files folder in config yaml
+    Find tracks in scope - moves out-of scope to separate folder
+    Calculate breaks & terrain information & save valid tracks as CSV files
+    :param config:
+    """
+    config = Config(config)
+    variables = config.read_all()
+
+    #Initialise QGIS instance to loads qgis functions
+    # qgs = QgisSetup()
+    # if not qgs:
+    #     return False
+
+    listfile_folder = variables['listfile_folder']
+    if listfile_folder is None:
+        if listfile is not None:
+            print('listfile folder not given')
+            return False
+    elif not (Path(listfile_folder).exists()):
+        print('listfile folder not found')
+        return False
+
+    CSV_filepath = variables['csv_folder']
+    if CSV_filepath is None:
+        if listfile is None:
+            print('CSV folder or file list not given')
+            return False
+    elif not (Path(CSV_filepath).exists()):
+        print('CSV folder not found')
+        return False
+
+    if corecount is None:
+        numThreads = os.cpu_count()
+    else:
+        numThreads = int(corecount)
+
+    pool = futures.ThreadPoolExecutor(numThreads)
+    results = []
+
+    if listfile is None:
+        files = glob.glob(CSV_filepath + '/*.csv', recursive=True)
+    else:
+        filetype = variables['filetype']
+        if filetype != 'osm' and filetype != 'hikr':
+            print('Filetype must be OSM or Hikr')
+            return False
+        listfile = listfile_folder + '/' + filetype + '/' + listfile
+        with open(listfile, 'r') as filehandle:
+            files = json.load(filehandle)
+
+    to_delete = ()
+    for file in files:
+        results.append(pool.submit(_recalulate_breaks, file))
+        #result = _recalulate_breaks(file)
+        #if result[1] is False:
+        #    to_delete.append(file)
+
+    for future in futures.as_completed(results):
+        print(future.result())
+        completed_file = future.result()[0]
+
+        if future.result()[1] is False:
+            to_delete.append(completed_file)
+
+    for item in to_delete:
+        os.remove(item)
+
+    print('All done')
+    #qgs.exit()
+
+
+def _recalulate_breaks(file):
+
+    # Tag breaks within the track & overwrite CSV file
+    valid = False
+    layer = QgsVectorLayer(file)
+    datalayer = BreakFinder().find_breaks(layer)
+    if datalayer:
+        valid = True
+
+    return file, valid
+
+
+if __name__ == "__main__":
+    main()

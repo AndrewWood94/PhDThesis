@@ -1,0 +1,89 @@
+#!/usr/bin/python
+
+"""
+Script to merge gpkg files into single file & convert to csv.
+"""
+
+from qgis.core import (QgsCoordinateReferenceSystem, QgsVectorLayer)
+import os
+from pathlib import Path
+from gps_reader_pkg.config import Config
+from gps_reader_pkg.qgis_app_init import QgisSetup
+from gps_reader_pkg.folder_methods import create_folder
+import click
+
+
+@click.command()
+@click.option('--config', '-c', help='config.yaml file location', required=True)
+def main(config):
+
+    """
+    Reads gpkg_folder from config file and merges all gpkg files into single file in both gpkg & csv format
+    Both output files are saved to merged_folder in config file
+    :param config:
+    :return: merged gpkg & csv files
+    """
+    config = Config(config)
+    variables=config.read_all()
+
+    # Initialise QGIS instance from path in config file
+    # qgs = QgisSetup()
+    # if not qgs:
+    #     return False
+
+    to_merge_folder = variables['processed']
+    if to_merge_folder is None:
+        print('merge folder not given')
+        return False
+    if not (Path(to_merge_folder).exists()):
+        print('merge folder not found')
+        return False
+
+    output_folder = variables['merged_folder']
+    if output_folder is None:
+        print('gpkg output folder not given')
+        return False
+    else:
+        create_folder(Path(output_folder))
+
+    output_name = variables['merged_filename']
+    if output_name is None:
+        print('No output filename given, defaulting to Merged')
+        output_name = 'Merged'
+
+    output_path = output_folder + '/' + output_name
+
+    from qgis import processing
+    from processing.core.Processing import Processing
+
+    Processing.initialize()
+
+    layerlist = []
+    file_list = os.listdir(to_merge_folder)
+    # h1 = file_list[:len(file_list) // 3]
+    # h2 = file_list[len(file_list) // 3:2*(len(file_list) // 3)]
+    # h3 = file_list[2*(len(file_list) // 3):]
+    # for filename in h3:
+    for filename in file_list:
+        if filename.endswith('.csv'):
+            layerlist.append(to_merge_folder + '/' + filename + '|layername=' + Path(filename).stem)
+
+    parameter_dictionary = {'CRS': QgsCoordinateReferenceSystem('EPSG:4326'),
+                            'LAYERS': layerlist,
+                            'OUTPUT': output_path + '.csv'}
+    processing.run("qgis:mergevectorlayers", parameter_dictionary)
+
+    # step = 500
+    # print(len(layerlist))
+    # for i in range(0, len(layerlist)+1,  step):
+    #
+    #     parameter_dictionary = {'CRS': QgsCoordinateReferenceSystem('EPSG:4326'),
+    #                              'LAYERS': layerlist[i:i+step],
+    #                              'OUTPUT': output_path+"_"+str(int(i/step)+18)+ '.csv'}
+    #
+    #     processing.run("qgis:mergevectorlayers", parameter_dictionary)
+
+    #qgs.exit()
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,37 @@
+data:
+  GPS_files:
+    #site for web scraper to find gps tracks
+    hikr_website: https://www.hikr.org/region516/ped/?gps=1
+    #destination to read GPS files from
+    folder: /exports/csce/eddie/inf/groups/ANC/Andrew/GPS_Tracks/Hikr/AllTracks/
+  terrain:
+    #path to folder containing Terrain files
+    terrain_folder: /exports/csce/eddie/inf/groups/ANC/Andrew/Terrain
+    DTM_resolution: 5
+  #filetype should be either Hikr or OSM
+  filetype: osm
+  #folder containing lists of files for multi-processing
+  listfile_folder:
+  #If type = OSM, give location of fully processed hikr data .csv to use in PrepareData script
+  processed_hikr_filepath:
+  R_script:
+output:
+  #location to place imported .gpx files
+  imported_gpx_folder: /exports/csce/eddie/inf/groups/ANC/Andrew/GPS_Tracks/Hikr/Imported
+  #location to move out-of-scope .gpx files
+  out_of_scope_folder: /exports/csce/eddie/inf/groups/ANC/Andrew/GPS_Tracks/Hikr/OutOfScope
+  #Location of csv files
+  CSV_folder: /Volumes/csce/inf/groups/ANC/Test/CSV/
+  #Location to save output files with only valid breaks (>30 seconds) tagged
+  valid_breaks_folder:
+  #Location to save output files with data combined into 50m segments
+  combined_50_folder:
+  #Location to save output files processed & filtered dataset with breaks tagged
+  processed_breaks_folder:
+  #destination folder for fully processed output files
+  processed_folder:
+  short_segments_folder:
+  merged_folder:
+  merged_filename:
+
+

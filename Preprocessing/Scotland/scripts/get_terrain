@@ -1,0 +1,107 @@
+#!/usr/bin/python
+
+"""
+Script to add terrain information to csv file
+"""
+
+from qgis.core import (QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsPointXY)
+from gps_reader_pkg.terrain_classifier import TerrainClassifier
+from gps_reader_pkg.config import Config
+from gps_reader_pkg.qgis_app_init import QgisSetup
+import pandas as pd
+import click
+from pathlib import Path
+
+
+@click.command()
+@click.option('--config', '-c', help='config.yaml file location', required=True)
+def main(config):
+    """
+    Takes merged csv file from config and adds/overwrites columns:
+        a_OS height,
+        b_OS height,
+        OS height_diff,
+        a_OS slope,
+        b_OS slope
+    :param config:
+    :return: overwrite csv with additional columns
+    """
+    config = Config(config)
+
+    #Initialise QGIS instance from path in config file
+    qgs = QgisSetup()
+    if not qgs:
+        return False
+
+    terrain_path = config['data']['terrain']['DTM_folder']
+    if terrain_path is None:
+        print('DTM Folder not given')
+        return False
+    if not (Path(terrain_path).exists()):
+        print('DTM Folder not found')
+        return False
+    resolution = config['data']['terrain']['DTM_resolution']
+
+    folder = config['output']['merged_folder']
+    if folder is None:
+        print('Folder containing merged csv file not given')
+        return False
+    if not (Path(folder).exists()):
+        print('Folder containing merged csv file not found')
+        return False
+    filename = config['output']['merged_name']
+    if filename is None:
+        print('Merged csv filename not given, defaulting to Merged')
+        filename = 'Merged'
+    merged_file = folder+'/'+filename+'.csv'
+    if not (Path(merged_file).exists()):
+        print('Merged csv file not found')
+        return False
+
+    #Set up transformation between national grid & gps coordinates
+    file_crs = 4326
+    terrain_crs = 27700
+    terrain_classifier = TerrainClassifier(terrain_path, resolution)
+    tf = QgsCoordinateTransform()
+    ref = QgsCoordinateReferenceSystem()
+    tf.setSourceCrs(ref.fromEpsgId(file_crs))
+    tf.setDestinationCrs(ref.fromEpsgId(terrain_crs))
+
+    with open(merged_file) as csv_file:
+        csv_input = pd.read_csv(csv_file)
+        csv_input['a_OS height'] = ""
+        csv_input['b_OS height'] = ""
+        csv_input['OS height_diff'] = ""
+        csv_input['a_OS slope'] = ""
+        csv_input['b_OS slope'] = ""
+        point_b = 0
+
+        for index, WKT in enumerate(csv_input['WKT']):
+
+            coords = WKT.split('(')[1][:-1].split(',')
+
+            point_a = coords[0].split(' ')
+
+            if point_a == point_b:
+                height_a = height_b
+                slope_a = slope_b
+            else:
+                projected_point = tf.transform(QgsPointXY(float(point_a[0]), float(point_a[1])))
+                height_a, slope_a = terrain_classifier.get_data(projected_point)
+
+            point_b = coords[1].split(' ')
+            projected_point = tf.transform(QgsPointXY(float(point_b[0]), float(point_b[1])))
+            height_b, slope_b = terrain_classifier.get_data(projected_point)
+
+            csv_input.loc[index, 'a_OS height'] = height_a
+            csv_input.loc[index, 'b_OS height'] = height_b
+            csv_input.loc[index, 'OS height_diff'] = height_b - height_a
+            csv_input.loc[index, 'a_OS slope'] = slope_a
+            csv_input.loc[index, 'b_OS slope'] = slope_b
+        csv_input.to_csv(merged_file, index=False)
+
+    qgs.exit()
+
+
+if __name__ == "__main__":
+    main()

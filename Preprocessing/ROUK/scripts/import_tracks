@@ -1,0 +1,177 @@
+#!/usr/bin/python
+"""
+Script to import gps tracks from folder or json file list
+"""
+
+from gps_reader_pkg.file_reader import GpxFileReader
+from gps_reader_pkg.break_finder import BreakFinder
+
+import glob
+import shutil
+from gps_reader_pkg.config import Config
+from gps_reader_pkg.qgis_app_init import QgisSetup
+from gps_reader_pkg.folder_methods import create_folder
+from gps_reader_pkg.vector_file_writer import VectorFileWriter
+import json
+
+import click
+from pathlib import Path
+import os
+from concurrent import futures
+
+
+@click.command()
+@click.option('--config', '-c', help='config.yaml file location', required=True)
+@click.option('--listfile', '-l', help='location of file list to process', required=False)
+@click.option('--corecount', '-cc', help='location of file list to process', required=False)
+@click.option('--min_duration', '-d', help='minimum time between read points', required=False, default=1)
+def main(config, listfile=None, corecount=None, min_duration=1):
+    """
+    Import GPS tracks from either list of filepaths (listfile), or GPS_files folder in config yaml
+    Find tracks in scope - moves out-of scope to separate folder
+    Calculate breaks & terrain information & save valid tracks as CSV files
+    :param config:
+    """
+    min_duration=int(min_duration)
+    config = Config(config)
+    variables = config.read_all()
+
+    # Initialise QGIS instance to loads qgis functions
+    # qgs = QgisSetup()
+    # if not qgs:
+    #     return False
+
+    data_filepath = variables['gps_folder']
+    if data_filepath is None:
+        if listfile is None:
+            print('GPS folder or file list not given')
+            return False
+    elif not (Path(data_filepath).exists()):
+        print('GPS folder not found')
+        return False
+
+    listfile_folder = variables['listfile_folder']
+    if listfile_folder is None:
+        if listfile is not None:
+            print('listfile folder not given')
+            return False
+    elif not (Path(listfile_folder).exists()):
+        print('listfile folder not found')
+        return False
+
+    CSV_destination = variables['csv_folder']
+    if CSV_destination is None:
+        print('output folder not given')
+        return False
+    else:
+        create_folder(Path(CSV_destination))
+    file_writer = VectorFileWriter(CSV_destination)
+
+    out_scope_filepath = variables['out_of_scope_folder']
+    if out_scope_filepath is None:
+        print('No folder given to save out_of_scope files')
+        return False
+    else:
+        create_folder(Path(out_scope_filepath))
+
+    completed_filepath = variables['imported_gpx_folder']
+    if completed_filepath is None:
+        print('No folder given to place imported GPX files')
+        return False
+    else:
+        create_folder(Path(completed_filepath))
+
+    terrain_path = variables['terrain_folder']
+    if terrain_path is None:
+        print('Terrain folder required to check scope')
+        return False
+    if not (Path(terrain_path).exists()):
+        print('Terrain folder not found')
+        return False
+
+    if corecount is None:
+        numThreads = os.cpu_count()
+    else:
+        numThreads = int(corecount)
+
+    pool = futures.ThreadPoolExecutor(numThreads)
+    results = []
+
+    if listfile is None:
+        files = glob.glob(data_filepath + '/**/*.gpx', recursive=True)
+    else:
+        filetype = variables['filetype']
+        if filetype != 'osm' and filetype != 'hikr':
+            print('Filetype must be OSM or Hikr')
+            return False
+        listfile = listfile_folder + '/' + filetype + '/' + listfile
+        with open(listfile, 'r') as filehandle:
+            files = json.load(filehandle)
+
+    for file in files:
+        results.append(pool.submit(_import_track,
+                                   file,
+                                   file_writer,
+                                   terrain_path,
+                                   check_scope=False,
+                                   minimum_duration=min_duration))
+        # result = _import_track(file, file_writer, terrain_path, check_scope=False, minimum_duration=min_duration)
+        # if result[1] is False:
+        #    shutil.move(file, out_scope_filepath + '/' + Path(file).name)
+
+    for future in futures.as_completed(results):
+        print(future.result())
+        completed_file = future.result()[0]
+
+        if future.result()[1] is False:
+            shutil.move(completed_file, out_scope_filepath + '/' + Path(completed_file).name)
+        else:
+            shutil.move(completed_file, completed_filepath + '/' + Path(completed_file).name)
+
+    print('All done')
+    #qgs.exit()
+
+
+def _import_track(file, file_writer, terrain_path, check_scope, minimum_duration):
+    filename = Path(file).stem
+    reader = GpxFileReader(name=filename,
+                           output_directory=file_writer.output_directory,
+                           overwrite=True,
+                           terrain_path=terrain_path)
+
+    # run initial fast file reader to check for out-of-scope tracks
+    if check_scope:
+        layers = reader.import_gpx_file(file,
+                                        get_elevation_slope=True,
+                                        min_duration=10000,
+                                        min_distance=10000,
+                                        write_file=False)
+        if layers is False:
+            return file, False
+
+    # import track and calculate attributes for each point
+    layers = reader.import_gpx_file(file,
+                                    calculate_motion_attributes=True,
+                                    get_elevation_slope=True,
+                                    get_obstruction=False,
+                                    get_terrain_type=False,
+                                    road_radius=50,
+                                    min_duration=minimum_duration,
+                                    write_file=False)
+    if not layers:
+        return file, False
+
+    # Tag breaks within the track & save as CSV file
+    valid = False
+    datapaths = []
+    for layer in layers:
+        datalayer = BreakFinder().find_breaks(layer)
+        if datalayer:
+            valid = True
+            datapaths.append(file_writer.writeCSV(datalayer))
+
+    return file, valid, datapaths
+
+
+if __name__ == "__main__":
+    main()
