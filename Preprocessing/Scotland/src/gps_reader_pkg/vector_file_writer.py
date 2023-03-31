@@ -1,4 +1,30 @@
+"""
+/***************************************************************************
+ This file was taken and adapted from:
 
+ GpxSegmentImporter
+                                 A QGIS plugin
+ This plugin imports an GPX file and creates short line segments between track points
+                              -------------------
+        begin                : 2017-12-01
+        git sha              : $Format:%H$
+        copyright            : (C) 2018 by Simon Gröchenig @ Salzburg Research
+        email                : simon.groechenig@salzburgresearch.at
+
+
+        MODIFIED:
+        begin                : 2019-11-04
+        email                : andrew.wood@ed.ac.uk
+ ***************************************************************************/
+/***************************************************************************
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 3 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ ***************************************************************************/
+"""
 from qgis.core import QgsVectorFileWriter, QgsCoordinateTransformContext
 import os.path
 
