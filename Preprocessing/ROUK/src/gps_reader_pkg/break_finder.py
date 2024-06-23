@@ -19,8 +19,8 @@ def get_segment_info(datalayer):
     exp = QgsExpression('array('
                         'minimum($id),'
                         'maximum($id),'
-                        'median(to_real("speed"), filter:=to_real("speed")>0),'
-                        'median(to_real("distance"), filter:=to_real("distance")>0),'
+                        'median(to_real("speed"),'
+                        'median(to_real("distance"),'
                         'sum(to_real("distance")),'
                         'sum(to_real("duration")))')
     context = QgsExpressionContext()
